@@ -152,10 +152,14 @@ th{font-size:.8rem;font-weight:700;color:var(--mut)}
 .day{aspect-ratio:1;border-radius:14px;background:transparent;color:var(--ink);box-shadow:none;padding:4px;font-weight:700;font-size:.95rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;position:relative}
 .day:hover{transform:none}
 .day-num{display:block;font-size:.95rem;font-weight:700}
-.day-event{display:block;font-size:.7rem;font-weight:600;color:var(--g);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;max-width:100%}
+.day-event{display:block;font-size:.7rem;font-weight:700;color:var(--g);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;max-width:100%;background:rgba(22,163,74,.15);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:2px 6px;border-radius:8px;border:1px solid rgba(22,163,74,.3)}
+body.dark .day-event{background:rgba(34,197,94,.2);border-color:rgba(34,197,94,.4)}
 .day.has::after{display:none}
 .day.on{background:var(--ink);color:var(--paper)}
-.day.on .day-event{color:var(--g2)}
+.day.on .day-event{color:var(--g2);background:rgba(34,197,94,.25);border-color:rgba(34,197,94,.5)}
+
+/* student selector cards */
+.student-card:hover{transform:translateY(-4px);box-shadow:0 24px 48px -18px rgba(10,10,10,.25)}
 
 /* iOS-style event modal */
 .event-modal{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;animation:modalFade .4s cubic-bezier(.2,.8,.2,1)}
@@ -761,14 +765,112 @@ function showEventModal(date){
   haptic();
 }
 
+/* ===== Add Student Modal ===== */
+function showAddStudentModal(account){
+  const modal=document.createElement('div');
+  modal.className='event-modal';
+  modal.innerHTML=`<div class="event-modal-bg"></div>
+    <div class="event-modal-content">
+      <button class="event-modal-close">×</button>
+      <div class="event-modal-date">Add Student</div>
+      <h3 class="event-modal-title">Link Another Child</h3>
+      <div class="event-modal-where" style="margin-bottom:16px">Enter the student code from the school to add them to your account.</div>
+      <div id="add-student-err" class="err" style="margin-bottom:12px"></div>
+      <input id="new-student-code" placeholder="Student Code (e.g. AMN-0142)" style="width:100%;margin-bottom:12px;text-transform:uppercase">
+      <div class="row" style="gap:8px">
+        <button class="g" style="flex:1" id="add-student-submit">Add Student</button>
+        <button class="ghost" style="flex:1" id="add-student-cancel">Cancel</button>
+      </div>
+    </div>`;
+  
+  document.body.appendChild(modal);
+  const close=()=>{modal.remove();haptic();};
+  const errBox=$('#add-student-err');
+  
+  modal.querySelector('.event-modal-close').onclick=close;
+  modal.querySelector('.event-modal-bg').onclick=close;
+  $('#add-student-cancel').onclick=close;
+  
+  $('#add-student-submit').onclick=()=>{
+    const studentCode=$('#new-student-code').value.trim().toUpperCase();
+    if(!studentCode){
+      errBox.innerHTML='<span class="err-ic">!</span><span>Please enter a student code</span>';
+      return;
+    }
+    
+    // Find student with matching code and parent code
+    const parentCode=DB.kids.find(k=>account.kids.includes(k.id))?.pcode;
+    if(!parentCode){
+      errBox.innerHTML='<span class="err-ic">!</span><span>Could not find your parent code. Contact the office.</span>';
+      return;
+    }
+    
+    const kid=DB.kids.find(k=>k.id===studentCode&&k.pcode===parentCode);
+    if(!kid){
+      errBox.innerHTML=`<span class="err-ic">!</span><span>Student code ${studentCode} doesn't match your parent code. Contact the office to link this student.</span>`;
+      return;
+    }
+    
+    if(account.kids.includes(kid.id)){
+      errBox.innerHTML='<span class="err-ic">!</span><span>This student is already linked to your account.</span>';
+      return;
+    }
+    
+    // Add student to account
+    account.kids.push(kid.id);
+    save();
+    toast('Student added successfully!');
+    close();
+    route();
+  };
+  
+  haptic();
+}
+
 /* ===== parent portal ===== */
 function parentPortal(a){
   const ids=a.kids||[];
   if(!ids.length){
     tabs([],'tab');
-    page(`<div class="card"><h2>Waiting for the school</h2><p class="mut">Your child will appear here once the school links them to your account.</p></div>`);
+    page(`<div class="card"><h2>Waiting for the school</h2><p class="mut">Your child will appear here once the school links them to your account.</p>
+      <button class="g wide" style="margin-top:14px" id="add-student">Add a student</button></div>`);
+    document.getElementById('add-student').onclick=()=>showAddStudentModal(a);
     return;
   }
+  
+  // Show student selector on Reports tab
+  if(U.tab==='report'&&!U.kid){
+    tabs([['report','Reports'],['fees','Fees'],['forms','Forms'],['circ','Circulars'],['cal','Calendar'],['msgs','Messages']],'tab');
+    const studentCards=ids.map(id=>{
+      const kid=kidBy(id);
+      if(!kid)return '';
+      const c=classOf(kid);
+      const due=kid.paid<kid.total;
+      return `<div class="card student-card" data-select="${id}" style="cursor:pointer;transition:transform .3s,box-shadow .3s">
+        <div class="row sp" style="margin-bottom:8px"><div><div class="label">${esc(c?c.name:'')}</div><h2 style="margin:4px 0 0">${esc(kid.name)}</h2></div>
+        <span class="chip ${due?'red':'g'}">${due?'Fees due':'Paid'}</span></div>
+        <div class="mut" style="font-size:.9rem">Tap to view report card →</div>
+      </div>`;
+    }).join('');
+    page(`<div class="head"><div><div class="label">My Children</div><h1>Select Student</h1></div></div>
+      ${studentCards}
+      <div class="card" style="margin-top:14px"><h2>Add Another Student</h2>
+        <p class="mut">If you have another child at this school, add their codes to view their report.</p>
+        <button class="g wide" style="margin-top:12px" id="add-student">Add student codes</button>
+      </div>
+      <div class="card"><h2>Need Help?</h2>
+        <p class="mut">If your child isn't showing or you need to link a student, contact the school office.</p>
+        <button class="ghost wide" style="margin-top:12px" id="contact-office">Contact Office</button>
+      </div>`);
+    $$('[data-select]').forEach(card=>card.onclick=()=>{U.kid=card.dataset.select;route();});
+    const addBtn=$('#add-student');
+    if(addBtn)addBtn.onclick=()=>showAddStudentModal(a);
+    const contactBtn=$('#contact-office');
+    if(contactBtn)contactBtn.onclick=()=>toast('Please call the school office at +256-XXX-XXXXX');
+    return;
+  }
+  
+  // Show individual student report
   if(!U.kid||!ids.includes(U.kid))U.kid=ids[0];
   const k=kidBy(U.kid);
   if(!k){
@@ -783,11 +885,12 @@ function parentPortal(a){
   if(U.tab==='report'&&!locked){DB.opened[k.id]=true;save();}
   const views={msgs:()=>pMsgs(k),fees:()=>pFees(k),forms:()=>pForms(k),circ:()=>pCirc(),cal:()=>pCal()};
   const body=locked?pGate(k):(views[U.tab]?views[U.tab]():pReport(k));
-  const switcher=ids.length>1?`<div class="row">${ids.map(id=>`<button class="sm ${id===k.id?'':'ghost'}" data-kid="${id}">${esc(kidBy(id).name.split(' ')[0])}</button>`).join('')}</div>`:'';
+  const switcher=ids.length>1||U.tab==='report'?`<div class="row" style="gap:8px">${ids.length>1?ids.map(id=>`<button class="sm ${id===k.id?'':'ghost'}" data-kid="${id}">${esc(kidBy(id)?kidBy(id).name.split(' ')[0]:'')}</button>`).join(''):''}${U.tab==='report'?'<button class="sm ghost" data-back="1">← All Students</button>':''}</div>`:'';
   page(`<div class="head"><div><div class="label">${esc(c?c.name:'')}</div><h1>${esc(k.name)}</h1></div>
     <div class="row">${switcher}<span class="chip ${due?'red':'g'}">${due?'Fees due':'Fees paid'}</span></div></div>
     ${promoStrip(k)}${body}`);
   $$('[data-kid]').forEach(b=>b.onclick=()=>{U.kid=b.dataset.kid;route();});
+  $$('[data-back]').forEach(b=>b.onclick=()=>{U.kid=null;route();});
   const v=$('#verify');
   if(v)v.onclick=()=>{DB.payments.push({id:Date.now(),kid:k.id,amt:k.total-k.paid,d:'Just now',via:'SchoolPay'});k.paid=k.total;save();toast('Payment confirmed');route();};
   bindParent(k);
