@@ -398,13 +398,16 @@ SEED.kids=SEED.kids.concat(
 <script>
 /* ===== boot ===== */
 setTimeout(()=>{const s=document.getElementById('splash');if(s)s.remove();},3300);
-const KEY='mbogo.v6';
+const KEY='mbogo.v7';
 const TODAY=new Date(2026,10,26);
 const NEXT={S1E:'S2E',S2E:'S3E',S3E:'S4E',S4E:'S5S',S5S:'S6S'};
 const clone=o=>JSON.parse(JSON.stringify(o));
 let DB;
 try{DB=JSON.parse(localStorage.getItem(KEY));}catch(e){DB=null;}
-if(!DB)DB=clone(SEED);
+if(!DB||!DB.kids||!Array.isArray(DB.kids)||DB.kids.length<4){
+  console.log('Resetting DB - corrupted or old version');
+  DB=clone(SEED);
+}
 ['subjects','classes','kids','accounts','msgs','circulars','events','payments','inbox','slips'].forEach(k=>{if(!Array.isArray(DB[k]))DB[k]=clone(SEED[k]||[]);});
 ['consents','med','subm','rstat','opened','prefs','decisions','absent','zeroConfirm'].forEach(k=>{if(!DB[k]||typeof DB[k]!=='object')DB[k]={};});
 if(!DB.teacherCode)DB.teacherCode=SEED.teacherCode;
@@ -704,6 +707,11 @@ function parentPortal(a){
   }
   if(!U.kid||!ids.includes(U.kid))U.kid=ids[0];
   const k=kidBy(U.kid);
+  if(!k){
+    tabs([],'tab');
+    page(`<div class="card"><h2>Student not found</h2><p class="mut">The student linked to your account (${U.kid}) couldn't be found. Please contact the school office.</p></div>`);
+    return;
+  }
   const c=classOf(k);
   const due=k.paid<k.total;
   tabs([['report','Reports'],['fees','Fees'],['forms','Forms'],['circ','Circulars'],['cal','Calendar'],['msgs','Messages']],'tab');
