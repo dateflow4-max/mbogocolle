@@ -149,11 +149,27 @@ th{font-size:.8rem;font-weight:700;color:var(--mut)}
 
 /* calendar */
 .wk{display:grid;grid-template-columns:repeat(7,1fr);font-size:.85rem;font-weight:700;color:var(--mut);margin:14px 0 6px;text-align:center}
-.day{aspect-ratio:1;border-radius:14px;background:transparent;color:var(--ink);box-shadow:none;padding:0;font-weight:700;font-size:.95rem}
+.day{aspect-ratio:1;border-radius:14px;background:transparent;color:var(--ink);box-shadow:none;padding:4px;font-weight:700;font-size:.95rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;position:relative}
 .day:hover{transform:none}
-.day.has::after{content:"";display:block;width:6px;height:6px;border-radius:50%;background:var(--g);margin:2px auto 0}
+.day-num{display:block;font-size:.95rem;font-weight:700}
+.day-event{display:block;font-size:.7rem;font-weight:600;color:var(--g);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;max-width:100%}
+.day.has::after{display:none}
 .day.on{background:var(--ink);color:var(--paper)}
-.day.on::after{background:var(--g2)}
+.day.on .day-event{color:var(--g2)}
+
+/* iOS-style event modal */
+.event-modal{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;animation:modalFade .4s cubic-bezier(.2,.8,.2,1)}
+.event-modal-bg{position:absolute;inset:0;background:rgba(10,10,10,.4);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%)}
+.event-modal-content{position:relative;width:min(420px,90vw);background:rgba(255,255,255,.85);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border-radius:28px;padding:28px;box-shadow:0 30px 80px -20px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.9);border:1px solid rgba(255,255,255,.6);animation:modalPop .5s cubic-bezier(.2,.8,.2,1);transform-origin:center}
+body.dark .event-modal-content{background:rgba(20,24,22,.75);border-color:rgba(255,255,255,.15)}
+@keyframes modalFade{from{opacity:0}}
+@keyframes modalPop{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+.event-modal-close{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.8);border:none;display:grid;place-items:center;cursor:pointer;font-size:1.3rem;line-height:1;color:var(--ink);transition:transform .2s,background .2s}
+.event-modal-close:hover{transform:scale(1.1);background:rgba(255,255,255,1)}
+body.dark .event-modal-close{background:rgba(0,0,0,.5);color:#fff}
+.event-modal-date{font-size:.9rem;font-weight:700;color:var(--g);margin-bottom:8px}
+.event-modal-title{font-size:1.6rem;font-weight:700;margin:0 0 12px;letter-spacing:-.02em}
+.event-modal-where{font-size:1rem;color:var(--mut);font-weight:600}
 
 /* paper sheet: forms and circulars */
 .sheet-wrap{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center}
@@ -721,6 +737,30 @@ function openPaper(o){
   requestAnimationFrame(check);
 }
 
+/* ===== iOS-style event modal ===== */
+function showEventModal(date){
+  const events=DB.events.filter(e=>e.date===date);
+  if(!events.length)return;
+  
+  const modal=document.createElement('div');
+  modal.className='event-modal';
+  modal.innerHTML=`<div class="event-modal-bg"></div>
+    <div class="event-modal-content">
+      <button class="event-modal-close">×</button>
+      <div class="event-modal-date">${fmtDate(date)}</div>
+      ${events.map(e=>`<div style="margin-bottom:20px">
+        <h3 class="event-modal-title">${esc(e.title)}</h3>
+        <div class="event-modal-where">${esc(e.where)}</div>
+      </div>`).join('')}
+    </div>`;
+  
+  document.body.appendChild(modal);
+  const close=()=>{modal.remove();haptic();};
+  modal.querySelector('.event-modal-close').onclick=close;
+  modal.querySelector('.event-modal-bg').onclick=close;
+  haptic();
+}
+
 /* ===== parent portal ===== */
 function parentPortal(a){
   const ids=a.kids||[];
@@ -875,14 +915,18 @@ function pCal(){
   const sel=c.sel&&c.sel.startsWith(monthPrefix)?c.sel:(monthEv[0]?monthEv[0].date:iso(1));
   const cells=[...Array(off).fill(0),...Array.from({length:days},(_,i)=>i+1)].map(d=>{
     if(!d)return '<div></div>';
-    const s=iso(d),has=DB.events.some(e=>e.date===s);
-    return `<button class="day ${s===sel?'on':''} ${has?'has':''}" data-day="${s}">${d}</button>`;
+    const s=iso(d);
+    const dayEvents=DB.events.filter(e=>e.date===s);
+    const has=dayEvents.length>0;
+    const eventTitle=has?dayEvents[0].title.split(' ').slice(0,2).join(' '):'';
+    return `<button class="day ${s===sel?'on':''} ${has?'has':''}" data-day="${s}" data-events="${has?'1':'0'}">
+      <span class="day-num">${d}</span>
+      ${has?`<span class="day-event">${esc(eventTitle)}</span>`:''}
+    </button>`;
   }).join('');
-  const selEv=DB.events.filter(e=>e.date===sel);
   return `${toggle}<div class="card">${monthBar}
     <div class="wk"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
-    <div class="grid7">${cells}</div></div>
-    <div class="card" style="margin-top:14px"><h2>${fmtDate(sel)}</h2>${selEv.map(e=>`<div class="rowline"><div style="font-weight:700">${esc(e.title)}</div><div class="mut" style="font-size:.9rem">${esc(e.where)}</div></div>`).join('')||'<p class="mut">Nothing on this day.</p>'}</div>`;
+    <div class="grid7" id="cal-grid">${cells}</div></div>`;
 }
 function pMsgs(k){
   const list=DB.msgs.filter(m=>m.kid===k.id);
@@ -925,7 +969,15 @@ function bindParent(k){
   });
   $$('[data-mode]').forEach(b=>b.onclick=()=>{U.cal.mode=b.dataset.mode;route();});
   $$('[data-mo]').forEach(b=>b.onclick=()=>{let m=U.cal.m+(+b.dataset.mo),y=U.cal.y;if(m<0){m=11;y--;}if(m>11){m=0;y++;}U.cal.m=m;U.cal.y=y;U.cal.sel=null;route();});
-  $$('[data-day]').forEach(b=>b.onclick=()=>{U.cal.sel=b.dataset.day;route();});
+  $$('[data-day]').forEach(b=>b.onclick=()=>{
+    const day=b.dataset.day;
+    const hasEvents=b.dataset.events==='1';
+    if(hasEvents){
+      showEventModal(day);
+    }else{
+      U.cal.sel=day;route();
+    }
+  });
   const sm=$('#savemed');
   if(sm)sm.onclick=()=>{DB.med[k.id]={allergies:$('#m1').value.trim(),meds:$('#m2').value.trim(),blood:$('#m3').value.trim(),emergency:$('#m4').value.trim(),d:'today'};inbox('medical','Medical details updated');save();toast('Medical details saved');route();};
 }
@@ -1037,7 +1089,7 @@ function bindTeacher(a){
     const [kid,s]=inp.dataset.score.split('|');const k=kidBy(kid);
     k.marks[CUR]=k.marks[CUR]||{};
     k.marks[CUR][s]=inp.value===''?null:Math.max(0,Math.min(100,+inp.value));
-    save();route();
+    save();
   });
   $$('[data-absent]').forEach(b=>b.onclick=()=>{
     const [kid,s]=b.dataset.absent.split('|');
@@ -1270,7 +1322,7 @@ function officePortal(a){
       const avgs=c.subj.map(s=>{const v=kids.map(k=>scoreOf(k,CUR,s)).filter(x=>x!=null);return `<tr><td>${esc(subjName(s))}</td><td>${v.length?Math.round(v.reduce((x,y)=>x+y,0)/v.length):'–'}%</td></tr>`;}).join('');
       return `<div class="card" style="margin-bottom:14px"><div class="row sp"><div><span class="label">${esc(c.name)} · ${TERMS[CUR]}</span><h2 style="margin:4px 0 0">${kids.length} reports</h2></div><span class="chip k">Ready to publish</span></div>
         <table style="margin-top:10px">${avgs}</table>
-        <div class="row" style="margin-top:16px"><button class="g" data-publish="${c.id}">Approve & publish to families</button><button class="ghost sm" data-return="${c.id}">Return to class teacher</button></div></div>`;
+        <div class="row" style="margin-top:16px;gap:8px"><button class="g" data-publish="${c.id}">Approve & publish to families</button><button class="ghost sm" data-return="${c.id}">Return to class teacher</button><button class="ghost sm" data-unlock="${c.id}">Unlock marks for editing</button></div></div>`;
     }).join(''):`<div class="card"><h2>Nothing to review</h2><p class="mut">Class reports appear here when a class teacher sends them.</p></div>`;
   }else if(U.otab==='circ'){
     body=`<div class="grid2">
@@ -1376,6 +1428,13 @@ function bindOffice(a,published){
     DB.rstat[c.id+':'+CUR]='published';save();toast(c.name+' published');route();
   });
   $$('[data-return]').forEach(b=>b.onclick=()=>{const c=DB.classes.find(x=>x.id===b.dataset.return);DB.rstat[c.id+':'+CUR]='open';save();toast('Returned to class teacher');route();});
+  $$('[data-unlock]').forEach(b=>b.onclick=()=>{
+    const c=DB.classes.find(x=>x.id===b.dataset.unlock);
+    // Unlock all subject submissions for this class
+    c.subj.forEach(s=>{delete DB.subm[c.id+':'+CUR+':'+s];});
+    DB.rstat[c.id+':'+CUR]='open';
+    save();toast(c.name+' marks unlocked - teacher can edit now');route();
+  });
   $$('[data-approve]').forEach(b=>b.onclick=()=>{const t=DB.accounts.find(x=>x.phone===b.dataset.approve);t.status='active';t.assign=t.assign||[];save();toast(t.name+' approved');route();});
   $$('[data-assign]').forEach(b=>b.onclick=()=>{
     const t=DB.accounts.find(x=>x.phone===b.dataset.assign);
