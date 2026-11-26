@@ -1,0 +1,22 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Backup files
+*.bak
+*~
+
+# Log files
+*.log
+
+# Old/unused files
+*.old
+data (1).js
+Mbogo College (Mock-up).html
+Mbogo College (Mock-up).md
+files.zip
+mbogo-college.zip
