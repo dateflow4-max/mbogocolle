@@ -585,7 +585,7 @@ function fields(mode,role){
   const f=$('#fields');
   const name=mode==='signup'?`<div class="field"><input name="name" placeholder="Full name" autocomplete="name"></div>`:'';
   let codes='';
-  if(mode==='signup'&&role==='parent')codes=`<div class="field"><input name="pc" placeholder="Parent code" autocomplete="off"></div><div class="field"><input name="sc" placeholder="Student code" autocomplete="off"></div>`;
+  if(mode==='signup'&&role==='parent')codes=`<div class="field"><input name="pc" placeholder="Parent code (from school)" autocomplete="off"></div><div class="field"><input name="sc" placeholder="Student code (comma-separated for multiple)" autocomplete="off"></div>`;
   if(mode==='signup'&&role==='teacher')codes=`<div class="field"><input name="tc" placeholder="Teacher code" autocomplete="off"></div>`;
   f.innerHTML=`${name}
   <div class="field"><input name="phone" id="ph" type="tel" inputmode="tel" placeholder="Phone number" autocomplete="tel"></div>
@@ -634,12 +634,36 @@ function fields(mode,role){
     if(DB.accounts.some(x=>x.phone===phone))return E('That phone already has an account. Try signing in instead.',['phone']);
     let kids=[],status='active';
     if(role==='parent'){
-      const pc=(d.pc||'').trim().toUpperCase(),sc=(d.sc||'').trim().toUpperCase();
-      const missingC=[!pc&&'pc',!sc&&'sc'].filter(Boolean);
-      if(missingC.length)return E('Enter the parent code and the student code from the school.',missingC);
-      const kid=DB.kids.find(k=>k.id===sc&&k.pcode===pc);
-      if(!kid)return E("We couldn't match those codes to a student. Check them with the school office.",['pc','sc']);
-      kids=[kid.id];
+      const pc=(d.pc||'').trim().toUpperCase();
+      const scInput=(d.sc||'').trim().toUpperCase();
+      const missingC=[!pc&&'pc',!scInput&&'sc'].filter(Boolean);
+      if(missingC.length)return E('Enter the parent code and at least one student code from the school.',missingC);
+      
+      // Parse multiple student codes (comma-separated)
+      const studentCodes=scInput.split(',').map(s=>s.trim()).filter(Boolean);
+      if(!studentCodes.length)return E('Enter at least one student code.',['sc']);
+      
+      // Validate each student code matches the parent code
+      const validKids=[];
+      const invalidCodes=[];
+      studentCodes.forEach(sc=>{
+        const kid=DB.kids.find(k=>k.id===sc&&k.pcode===pc);
+        if(kid){
+          validKids.push(kid.id);
+        }else{
+          invalidCodes.push(sc);
+        }
+      });
+      
+      if(invalidCodes.length>0){
+        return E(`These student codes don't match your parent code: ${invalidCodes.join(', ')}. Check them with the school office.`,['pc','sc']);
+      }
+      
+      if(validKids.length===0){
+        return E("We couldn't match any codes to students. Check them with the school office.",['pc','sc']);
+      }
+      
+      kids=validKids;
     }else{
       const tc=(d.tc||'').trim().toUpperCase();
       if(!tc)return E('Enter the teacher code from the school office.',['tc']);
@@ -1055,7 +1079,22 @@ function bindTeacher(a){
         errBox.innerHTML=`<span class="err-ic">!</span><span>${msg}</span>`;
         errBox.classList.remove('pop');void errBox.offsetWidth;errBox.classList.add('pop');
       }
-      if(card){card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');}
+      if(card){
+        card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');
+        // Scroll to the error
+        setTimeout(()=>card.scrollIntoView({behavior:'smooth',block:'center'}),100);
+      }
+      // Find and scroll to first problem row
+      const firstProblem=missing.length?missing[0]:zeros[0];
+      if(firstProblem){
+        setTimeout(()=>{
+          const inp=$(`input[data-score="${firstProblem.id}|${s}"]`);
+          if(inp){
+            inp.scrollIntoView({behavior:'smooth',block:'center'});
+            inp.focus();
+          }
+        },400);
+      }
       return toast('Please fix the highlighted issues');
     }
     DB.subm[cid+':'+CUR+':'+s]=true;save();toast(subjName(s)+' submitted');route();
@@ -1094,7 +1133,22 @@ function bindTeacher(a){
         errBox.innerHTML=`<span class="err-ic">!</span><span>${msg}</span>`;
         errBox.classList.remove('pop');void errBox.offsetWidth;errBox.classList.add('pop');
       }
-      if(card){card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');}
+      if(card){
+        card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');
+        // Scroll to the error box
+        setTimeout(()=>errBox.scrollIntoView({behavior:'smooth',block:'center'}),100);
+      }
+      // Scroll to first problem student
+      const firstProblem=missingMarks.length?missingMarks[0]:missingRemarks[0];
+      if(firstProblem){
+        setTimeout(()=>{
+          const inp=missingRemarks.includes(firstProblem)?$(`input[data-remark="${firstProblem.id}"]`):$(`input[data-kname="${firstProblem.id}"]`);
+          if(inp){
+            inp.scrollIntoView({behavior:'smooth',block:'center'});
+            inp.focus();
+          }
+        },400);
+      }
       return toast('Please fix the highlighted issues');
     }
     DB.rstat[cid+':'+CUR]='sent';save();toast('Sent to the office');route();
