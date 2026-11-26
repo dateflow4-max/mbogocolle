@@ -345,8 +345,8 @@ const SEED={
     {name:'Office Desk',phone:'0780000001',pw:'office1',role:'office',status:'active',assign:[]},
     {name:'Amina Parent',phone:'0700000001',pw:'parent1',role:'parent',status:'active',kids:['AMN-0142'],assign:[]},
     {name:'Joel Parent',phone:'0700000002',pw:'parent2',role:'parent',status:'active',kids:['JSM-0391'],assign:[]},
-    {name:'Test Parent',phone:'0701234567',pw:'parent123',role:'parent',status:'active',kids:['AMN-0142','PAR-7731'],assign:[]},
-    {name:'Test Parent Two',phone:'0709876543',pw:'parent456',role:'parent',status:'active',kids:['JSM-0391','PAR-1180'],assign:[]},
+    {name:'Test Parent',phone:'0701234567',pw:'parent123',role:'parent',status:'active',kids:['AMN-0142'],assign:[]},
+    {name:'Test Parent Two',phone:'0709876543',pw:'parent456',role:'parent',status:'active',kids:['JSM-0391'],assign:[]},
     {name:'Test Teacher',phone:'0771234567',pw:'teach123',role:'teacher',status:'pending',assign:[{cls:'GREEN-2026',subj:null}]}
   ],
   msgs:[
@@ -434,7 +434,7 @@ const haptic=()=>{if(navigator.vibrate)navigator.vibrate(6);};
 const go=p=>{location.hash='#'+p;};
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2200);}
 
-const U={tab:'report',otab:'overview',ttab:'marks',arole:'parent',blobIdx:null,kid:null,armYear:false,stq:'',stc:'',
+const U={tab:'report',otab:'overview',ttab:'marks',arole:'parent',blobIdx:null,kid:null,armYear:false,stq:'',stc:'',stpay:'',ststat:'',stpage:1,
   cal:{y:2026,m:11,mode:'calendar',sel:null}};
 
 /* ===== page frame ===== */
@@ -1064,8 +1064,20 @@ function officePortal(a){
     </div>`;
   }else if(U.otab==='students'){
     const classOpts=`<option value="">All classes</option>`+DB.classes.map(c=>`<option value="${c.id}" ${U.stc===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
-    body=`<div class="card"><div class="row" style="margin-bottom:12px"><input id="stq" placeholder="Search by name or code" value="${esc(U.stq)}" style="flex:2;min-width:180px"><select id="stc" style="flex:1;min-width:150px">${classOpts}</select></div>
-      <div id="stlist"></div></div>`;
+    const payOpts=`<option value="">All payment status</option><option value="paid" ${U.stpay==='paid'?'selected':''}>Fully paid</option><option value="unpaid" ${U.stpay==='unpaid'?'selected':''}>Has balance due</option>`;
+    const statusOpts=`<option value="">All status</option><option value="active" ${U.ststat==='active'?'selected':''}>Active</option><option value="inactive" ${U.ststat==='inactive'?'selected':''}>Inactive</option>`;
+    body=`<div class="card">
+      <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+        <input id="stq" placeholder="Search by name or code" value="${esc(U.stq)}" style="flex:2;min-width:180px">
+        <select id="stc" style="flex:1;min-width:140px">${classOpts}</select>
+        <select id="stpay" style="flex:1;min-width:160px">${payOpts}</select>
+        <select id="ststat" style="flex:1;min-width:130px">${statusOpts}</select>
+        <button class="ghost sm" id="strclear">Clear filters</button>
+      </div>
+      <div id="stcount" style="margin-bottom:10px"></div>
+      <div id="stlist"></div>
+      <div id="stpag" style="margin-top:14px"></div>
+    </div>`;
   }else if(U.otab==='staff'){
     const classOpts=DB.classes.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
     const roleOpts=`<option value="">Class teacher</option>`+DB.subjects.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
@@ -1133,8 +1145,42 @@ function drawStudents(){
   const list=$('#stlist');
   if(!list)return;
   const q=U.stq.toLowerCase();
-  const rows=DB.kids.filter(k=>(!U.stc||k.classId===U.stc)&&(!q||k.name.toLowerCase().includes(q)||k.id.toLowerCase().includes(q)));
-  list.innerHTML=`<div style="overflow-x:auto"><table><tr><th>Student</th><th>Class</th><th>Fees</th><th>Status</th></tr>${rows.map(k=>`<tr class="hl" data-profile="${k.id}" style="cursor:pointer"><td style="font-weight:600">${esc(k.name)}<div class="mut" style="font-size:.85rem">${k.id}</div></td><td>${esc(classNameOf(k.classId))}</td><td>${k.paid>=k.total?'<span class="chip g">Paid</span>':`<span class="due">${money(k.total-k.paid)}</span>`}</td><td>${esc(k.status)}</td></tr>`).join('')||'<tr><td colspan="4" class="mut">No students match.</td></tr>'}</table></div>`;
+  const PER_PAGE=20;
+  if(!U.stpage)U.stpage=1;
+  
+  let rows=DB.kids.filter(k=>{
+    if(U.stc&&k.classId!==U.stc)return false;
+    if(U.stpay==='paid'&&k.paid<k.total)return false;
+    if(U.stpay==='unpaid'&&k.paid>=k.total)return false;
+    if(U.ststat&&k.status!==U.ststat)return false;
+    if(q&&!k.name.toLowerCase().includes(q)&&!k.id.toLowerCase().includes(q))return false;
+    return true;
+  });
+  
+  const total=rows.length;
+  const pages=Math.ceil(total/PER_PAGE)||1;
+  if(U.stpage>pages)U.stpage=pages;
+  const start=(U.stpage-1)*PER_PAGE;
+  const end=start+PER_PAGE;
+  const page=rows.slice(start,end);
+  
+  const count=$('#stcount');
+  if(count)count.innerHTML=`<div class="row sp"><span class="label">Showing ${start+1}–${Math.min(end,total)} of ${total} students</span><span class="mut" style="font-size:.9rem">Page ${U.stpage} of ${pages}</span></div>`;
+  
+  list.innerHTML=`<div style="overflow-x:auto"><table><tr><th>Student</th><th>Class</th><th>Fees</th><th>Status</th></tr>${page.map(k=>`<tr class="hl" data-profile="${k.id}" style="cursor:pointer"><td style="font-weight:600">${esc(k.name)}<div class="mut" style="font-size:.85rem">${k.id}</div></td><td>${esc(classNameOf(k.classId))}</td><td>${k.paid>=k.total?'<span class="chip g">Paid</span>':`<span class="due">${money(k.total-k.paid)} due</span>`}</td><td><span class="chip ${k.status==='active'?'':'mut'}">${esc(k.status)}</span></td></tr>`).join('')||'<tr><td colspan="4" class="mut">No students match.</td></tr>'}</table></div>`;
+  
+  const pag=$('#stpag');
+  if(pag&&pages>1){
+    const btns=[];
+    if(U.stpage>1)btns.push(`<button class="sm ghost" data-pg="${U.stpage-1}">← Previous</button>`);
+    btns.push(`<span class="mut" style="padding:0 12px">Page ${U.stpage} of ${pages}</span>`);
+    if(U.stpage<pages)btns.push(`<button class="sm ghost" data-pg="${U.stpage+1}">Next →</button>`);
+    pag.innerHTML=`<div class="row" style="justify-content:center">${btns.join('')}</div>`;
+    pag.querySelectorAll('[data-pg]').forEach(b=>b.onclick=()=>{U.stpage=+b.dataset.pg;drawStudents();});
+  }else if(pag){
+    pag.innerHTML='';
+  }
+  
   list.querySelectorAll('[data-profile]').forEach(r=>r.onclick=()=>profileSheet(r.dataset.profile));
 }
 function bindOffice(a,published){
@@ -1143,7 +1189,17 @@ function bindOffice(a,published){
   const fees=$('[data-fees]');
   if(fees)fees.onclick=()=>feeSheet();
   const sq=$('#stq');
-  if(sq){sq.oninput=()=>{U.stq=sq.value;drawStudents();};$('#stc').onchange=e=>{U.stc=e.target.value;drawStudents();};}
+  if(sq){
+    sq.oninput=()=>{U.stq=sq.value;U.stpage=1;drawStudents();};
+    const stc=$('#stc');
+    if(stc)stc.onchange=e=>{U.stc=e.target.value;U.stpage=1;drawStudents();};
+    const stpay=$('#stpay');
+    if(stpay)stpay.onchange=e=>{U.stpay=e.target.value;U.stpage=1;drawStudents();};
+    const ststat=$('#ststat');
+    if(ststat)ststat.onchange=e=>{U.ststat=e.target.value;U.stpage=1;drawStudents();};
+    const strclear=$('#strclear');
+    if(strclear)strclear.onclick=()=>{U.stq='';U.stc='';U.stpay='';U.ststat='';U.stpage=1;route();};
+  }
   $$('[data-dec]').forEach(s=>s.onchange=()=>{DB.decisions[s.dataset.dec]=s.value;save();toast('Decision saved');});
   const cy=$('#closeyear');
   if(cy)cy.onclick=()=>{
