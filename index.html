@@ -246,6 +246,16 @@ button.busy::after{content:"";display:inline-block;width:14px;height:14px;margin
 .cta .btn.glow{animation:glow 1s ease-out}
 @keyframes glow{0%{box-shadow:0 0 0 0 rgba(22,163,74,.75)}55%{box-shadow:0 0 0 20px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
 
+/* teacher marks validation */
+.err-box{display:flex;gap:10px;align-items:flex-start;border-radius:14px;padding:12px 14px;background:rgba(220,38,38,.12);border:1.5px solid rgba(220,38,38,.3);color:#b42318;font-size:.92rem;font-weight:600}
+.err-box.pop{animation:pop .4s cubic-bezier(.2,.8,.2,1)}
+.mark-card.shake{animation:shake .5s}
+tr.missing-mark{background:rgba(220,38,38,.08)}
+tr.missing-mark input{border-color:#dc2626;animation:pulse-border 1.5s ease-in-out infinite}
+tr.zero-warn{background:rgba(251,191,36,.08)}
+tr.zero-warn input{border-color:#f59e0b}
+@keyframes pulse-border{0%,100%{border-color:#dc2626}50%{border-color:#f87171}}
+
 </style>
 </head>
 <body>
@@ -396,7 +406,7 @@ let DB;
 try{DB=JSON.parse(localStorage.getItem(KEY));}catch(e){DB=null;}
 if(!DB)DB=clone(SEED);
 ['subjects','classes','kids','accounts','msgs','circulars','events','payments','inbox','slips'].forEach(k=>{if(!Array.isArray(DB[k]))DB[k]=clone(SEED[k]||[]);});
-['consents','med','subm','rstat','opened','prefs','decisions'].forEach(k=>{if(!DB[k]||typeof DB[k]!=='object')DB[k]={};});
+['consents','med','subm','rstat','opened','prefs','decisions','absent','zeroConfirm'].forEach(k=>{if(!DB[k]||typeof DB[k]!=='object')DB[k]={};});
 if(!DB.teacherCode)DB.teacherCode=SEED.teacherCode;
 if(!DB.acadYear)DB.acadYear=SEED.acadYear;
 DB.kids.forEach(k=>{if(!k.history)k.history=[];if(k.promo===undefined)k.promo=null;if(!k.status)k.status='active';});
@@ -922,11 +932,23 @@ function marksView(a){
     if(!c)return '';
     const done=DB.subm[c.id+':'+CUR+':'+subj];
     const kids=classKids(c);
-    return `<div class="card" style="margin-bottom:14px" data-cid="${c.id}">
+    const missing=kids.filter(k=>scoreOf(k,CUR,subj)==null&&!DB.absent[k.id+':'+CUR+':'+subj]);
+    const zeros=kids.filter(k=>scoreOf(k,CUR,subj)===0&&!DB.zeroConfirm[k.id+':'+CUR+':'+subj]);
+    return `<div class="card mark-card" style="margin-bottom:14px" data-cid="${c.id}" data-subj="${subj}">
       <div class="row sp" style="margin-bottom:12px"><div><span class="label">${esc(c.name)}</span><h2 style="margin:4px 0 0">${esc(subjName(subj))}</h2></div>
       <span class="chip ${done?'g':'red'}">${done?'Submitted':'Enter marks'}</span></div>
-      <div style="overflow-x:auto"><table><tr><th>Student</th><th>${TERMS[CUR]} %</th></tr>
-      ${kids.map(k=>`<tr class="hl"><td>${esc(k.name)}</td><td><input class="num" type="number" min="0" max="100" data-score="${k.id}|${subj}" value="${scoreOf(k,CUR,subj)??''}" ${done?'disabled':''}></td></tr>`).join('')||'<tr><td colspan="2" class="mut">No students yet.</td></tr>'}</table></div>
+      ${!done&&(missing.length||zeros.length)?`<div id="merr-${c.id}-${subj}" class="err-box" style="margin-bottom:14px"></div>`:''}
+      <div style="overflow-x:auto"><table><tr><th>Student</th><th>${TERMS[CUR]} %</th><th>Status</th></tr>
+      ${kids.map(k=>{
+        const score=scoreOf(k,CUR,subj);
+        const isAbsent=DB.absent[k.id+':'+CUR+':'+subj];
+        const needsConfirm=score===0&&!DB.zeroConfirm[k.id+':'+CUR+':'+subj];
+        const isMissing=score==null&&!isAbsent;
+        return `<tr class="hl ${isMissing?'missing-mark':needsConfirm?'zero-warn':''}"><td>${esc(k.name)}</td>
+          <td><input class="num" type="number" min="0" max="100" data-score="${k.id}|${subj}" value="${score??''}" ${done||isAbsent?'disabled':''} placeholder="${isAbsent?'Absent':'0-100'}"></td>
+          <td>${isAbsent?`<span class="chip mut">Absent</span> <button class="ghost sm" data-unabsent="${k.id}|${subj}" ${done?'disabled':''}>Undo</button>`:needsConfirm?`<button class="sm" data-confirmzero="${k.id}|${subj}">Confirm 0</button>`:!done?`<button class="ghost sm" data-absent="${k.id}|${subj}">Mark absent</button>`:''}</td></tr>`;
+      }).join('')||'<tr><td colspan="3" class="mut">No students yet.</td></tr>'}</table></div>
+      ${!done?`<div style="margin-top:14px"><button class="ghost sm" data-addmissing="${c.id}|${subj}">+ Add missing student</button></div>`:''}
       <div class="row" style="margin-top:14px">${done?'':`<button class="g" data-submit="${c.id}|${subj}">Submit ${esc(subjName(subj))}</button>`}</div>
     </div>`;
   }).join('');
@@ -966,12 +988,51 @@ function bindTeacher(a){
     const [kid,s]=inp.dataset.score.split('|');const k=kidBy(kid);
     k.marks[CUR]=k.marks[CUR]||{};
     k.marks[CUR][s]=inp.value===''?null:Math.max(0,Math.min(100,+inp.value));
-    save();
+    save();route();
+  });
+  $$('[data-absent]').forEach(b=>b.onclick=()=>{
+    const [kid,s]=b.dataset.absent.split('|');
+    DB.absent[kid+':'+CUR+':'+s]=true;
+    const k=kidBy(kid);k.marks[CUR]=k.marks[CUR]||{};k.marks[CUR][s]=null;
+    save();toast('Marked as absent');route();
+  });
+  $$('[data-unabsent]').forEach(b=>b.onclick=()=>{
+    const [kid,s]=b.dataset.unabsent.split('|');
+    delete DB.absent[kid+':'+CUR+':'+s];
+    save();toast('Absence removed');route();
+  });
+  $$('[data-confirmzero]').forEach(b=>b.onclick=()=>{
+    const [kid,s]=b.dataset.confirmzero.split('|');
+    DB.zeroConfirm[kid+':'+CUR+':'+s]=true;
+    save();toast('Zero confirmed');route();
+  });
+  $$('[data-addmissing]').forEach(b=>b.onclick=()=>{
+    const [cid,subj]=b.dataset.addmissing.split('|');
+    const name=prompt('Enter the missing student's full name:');
+    if(!name||!name.trim())return;
+    const id='MISS-'+Math.random().toString(36).slice(2,6).toUpperCase();
+    DB.kids.push({id,pcode:'PAR-'+Math.random().toString(36).slice(2,6).toUpperCase(),name:name.trim(),classId:cid,total:450000,paid:0,spc:'SP-'+Math.floor(100000+Math.random()*899999),due:TERM_END,pos:[0,0],att:[],marks:[{},{},{}],pub:[0,0,0],rem:['','',''],history:[],promo:null,status:'pending'});
+    DB.inbox.unshift({id:Date.now(),type:'missing-student',kid:id,text:`Teacher ${a.name} added missing student: ${name.trim()} in ${cid}`,d:'Just now',done:false});
+    save();toast('Student added · office will review');route();
   });
   $$('[data-submit]').forEach(b=>b.onclick=()=>{
     const [cid,s]=b.dataset.submit.split('|');const c=DB.classes.find(x=>x.id===cid);
-    const missing=classKids(c).filter(k=>scoreOf(k,CUR,s)==null);
-    if(missing.length)return toast(missing.length+' mark(s) missing');
+    const kids=classKids(c);
+    const missing=kids.filter(k=>scoreOf(k,CUR,s)==null&&!DB.absent[k.id+':'+CUR+':'+s]);
+    const zeros=kids.filter(k=>scoreOf(k,CUR,s)===0&&!DB.zeroConfirm[k.id+':'+CUR+':'+s]);
+    const errBox=$(`#merr-${cid}-${s}`);
+    const card=$(`.mark-card[data-cid="${cid}"][data-subj="${s}"]`);
+    if(missing.length||zeros.length){
+      let msg='';
+      if(missing.length)msg=`${missing.length} student(s) have no mark. Add marks or mark them absent.`;
+      if(zeros.length)msg+=`${msg?' ':''} ${zeros.length} student(s) have 0%. Confirm if they actually scored zero.`;
+      if(errBox){
+        errBox.innerHTML=`<span class="err-ic">!</span><span>${msg}</span>`;
+        errBox.classList.remove('pop');void errBox.offsetWidth;errBox.classList.add('pop');
+      }
+      if(card){card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');}
+      return toast('Please fix the highlighted issues');
+    }
     DB.subm[cid+':'+CUR+':'+s]=true;save();toast(subjName(s)+' submitted');route();
   });
   const wrap=$('[data-cid]');
