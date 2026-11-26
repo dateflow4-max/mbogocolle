@@ -1033,7 +1033,7 @@ function bindTeacher(a){
   });
   $$('[data-addmissing]').forEach(b=>b.onclick=()=>{
     const [cid,subj]=b.dataset.addmissing.split('|');
-    const name=prompt('Enter the missing student's full name:');
+    const name=prompt("Enter the missing student's full name:");
     if(!name||!name.trim())return;
     const id='MISS-'+Math.random().toString(36).slice(2,6).toUpperCase();
     DB.kids.push({id,pcode:'PAR-'+Math.random().toString(36).slice(2,6).toUpperCase(),name:name.trim(),classId:cid,total:450000,paid:0,spc:'SP-'+Math.floor(100000+Math.random()*899999),due:TERM_END,pos:[0,0],att:[],marks:[{},{},{}],pub:[0,0,0],rem:['','',''],history:[],promo:null,status:'pending'});
