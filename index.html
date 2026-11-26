@@ -990,6 +990,7 @@ function classView(c){
     return `<tr class="hl ${hasMissingMark||hasMissingRemark?'missing-mark':''}"><td><input data-kname="${k.id}" value="${esc(k.name)}" style="padding:8px;font-size:.9rem;min-width:150px"></td>${cells}<td><b>${avg??'–'}</b></td><td><input data-remark="${k.id}" value="${esc(k.rem[CUR]||'')}" placeholder="Add remark" style="padding:8px;font-size:.88rem;min-width:180px" class="${hasMissingRemark?'bad':''}"></td></tr>`;
   }).join('');
   const subjHeaders=subs.map(s=>esc(subjName(s)).split(' ')[0]);
+  const subjHeaderCells=subjHeaders.map(h=>'<th>'+h+'</th>').join('');
   return `<div data-cid="${c.id}"><div class="head"><div><div class="label">${esc(c.name)} · ${TERMS[CUR]}</div><h1>My class</h1></div>
     <span class="chip ${status==='sent'?'g':''}">${status==='sent'?'Sent to office':status==='published'?'Published':'Open'}</span></div>
   <div class="strip"><span><b>${doneCount} of ${subs.length}</b> subjects submitted</span><span class="mut">${kids.length} students</span></div>
@@ -1004,7 +1005,7 @@ function classView(c){
     <div class="row sp" style="margin-bottom:12px"><h2 style="margin:0">Review</h2>
     <button class="g sm" id="send" ${allSubmitted&&kids.length&&status!=='sent'?'':'disabled'}>${status==='sent'?'Sent ✓':'Send to office'}</button></div>
     ${status!=='sent'&&hasIssues?`<div id="rerr-${c.id}" class="err-box" style="margin-bottom:14px"></div>`:''}
-    <div style="overflow-x:auto"><table><tr><th>Student</th>${subjHeaders.map(h=>`<th>${h}</th>`).join('')}<th>Avg</th><th>Remark</th></tr>${review||'<tr><td colspan="9" class="mut">No students yet.</td></tr>'}</table></div>
+    <div style="overflow-x:auto"><table><tr><th>Student</th>${subjHeaderCells}<th>Avg</th><th>Remark</th></tr>${review||'<tr><td colspan="9" class="mut">No students yet.</td></tr>'}</table></div>
   </div></div>`;
 }
 function bindTeacher(a){
