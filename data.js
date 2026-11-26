@@ -276,3 +276,16 @@ SEED.students = SEED.students.map((student, index) => {
     const code = `SP${2026}${String(index + 1).padStart(4, '0')}`;
     return { ...student, schoolPayCode: code };
 });
+
+// Pre-create accounts for easy testing
+SEED.accounts = [
+    {
+        id: 'OFFICE001',
+        name: 'Office Admin',
+        phone: '+256700000000',
+        password: 'office123',
+        role: 'office',
+        status: 'active',
+        createdAt: '2026-01-01T00:00:00.000Z'
+    }
+];
