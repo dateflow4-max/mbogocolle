@@ -967,15 +967,29 @@ function classView(c){
   const doneCount=subs.filter(s=>DB.subm[c.id+':'+CUR+':'+s]).length;
   const allSubmitted=subs.length>0&&doneCount===subs.length;
   const status=DB.rstat[c.id+':'+CUR]||'open';
+  
+  // Check for missing marks and remarks
+  const missingMarks=kids.filter(k=>subs.some(s=>scoreOf(k,CUR,s)==null&&!DB.absent[k.id+':'+CUR+':'+s]));
+  const missingRemarks=kids.filter(k=>!k.rem[CUR]||k.rem[CUR].trim()==='');
+  const hasIssues=missingMarks.length>0||missingRemarks.length>0;
+  
   const subjRows=subs.map(s=>{
     const sub=DB.subm[c.id+':'+CUR+':'+s],t=subjTeacher(c,s);
     return `<div class="rowline row sp"><div><div style="font-weight:600">${esc(subjName(s))}</div><div class="mut" style="font-size:.9rem">${t?esc(t.name):'No teacher yet · office assigns'}</div></div><span class="chip ${sub?'g':''}">${sub?'Submitted':'Waiting'}</span></div>`;
   }).join('');
   const review=kids.map(k=>{
-    const cells=subs.map(s=>{const v=scoreOf(k,CUR,s);return `<td>${v==null?'<span class="due">–</span>':v}</td>`;}).join('');
+    const hasMissingMark=subs.some(s=>scoreOf(k,CUR,s)==null&&!DB.absent[k.id+':'+CUR+':'+s]);
+    const hasMissingRemark=!k.rem[CUR]||k.rem[CUR].trim()==='';
+    const cells=subs.map(s=>{
+      const v=scoreOf(k,CUR,s);
+      const isAbsent=DB.absent[k.id+':'+CUR+':'+s];
+      const isMissing=v==null&&!isAbsent;
+      return `<td>${isAbsent?'<span class="chip mut">Absent</span>':isMissing?'<span class="due">–</span>':v}</td>`;
+    }).join('');
     const avg=avgOf(k,CUR,subs);
-    return `<tr class="hl"><td><input data-kname="${k.id}" value="${esc(k.name)}" style="padding:8px;font-size:.9rem;min-width:150px"></td>${cells}<td><b>${avg??'–'}</b></td><td><input data-remark="${k.id}" value="${esc(k.rem[CUR]||'')}" placeholder="Remark" style="padding:8px;font-size:.88rem;min-width:180px"></td></tr>`;
+    return `<tr class="hl ${hasMissingMark||hasMissingRemark?'missing-mark':''}"><td><input data-kname="${k.id}" value="${esc(k.name)}" style="padding:8px;font-size:.9rem;min-width:150px"></td>${cells}<td><b>${avg??'–'}</b></td><td><input data-remark="${k.id}" value="${esc(k.rem[CUR]||'')}" placeholder="Add remark" style="padding:8px;font-size:.88rem;min-width:180px" class="${hasMissingRemark?'bad':''}"></td></tr>`;
   }).join('');
+  const subjHeaders=subs.map(s=>esc(subjName(s)).split(' ')[0]);
   return `<div data-cid="${c.id}"><div class="head"><div><div class="label">${esc(c.name)} · ${TERMS[CUR]}</div><h1>My class</h1></div>
     <span class="chip ${status==='sent'?'g':''}">${status==='sent'?'Sent to office':status==='published'?'Published':'Open'}</span></div>
   <div class="strip"><span><b>${doneCount} of ${subs.length}</b> subjects submitted</span><span class="mut">${kids.length} students</span></div>
@@ -986,9 +1000,11 @@ function classView(c){
       <div class="row"><input id="nk" placeholder="Student name" style="flex:1"><button class="sm" id="addkid2">Add</button></div>
     </div>
   </div>
-  <div class="card" style="margin-top:14px"><div class="row sp" style="margin-bottom:12px"><h2 style="margin:0">Review</h2>
+  <div class="card mark-card" style="margin-top:14px" data-review="${c.id}">
+    <div class="row sp" style="margin-bottom:12px"><h2 style="margin:0">Review</h2>
     <button class="g sm" id="send" ${allSubmitted&&kids.length&&status!=='sent'?'':'disabled'}>${status==='sent'?'Sent ✓':'Send to office'}</button></div>
-    <div style="overflow-x:auto"><table><tr><th>Student</th>${subs.map(s=>`<th>${esc(subjName(s)).split(' ')[0]}</th>`).join('')}<th>Avg</th><th>Remark</th></tr>${review||'<tr><td colspan="9" class="mut">No students yet.</td></tr>'}</table></div>
+    ${status!=='sent'&&hasIssues?`<div id="rerr-${c.id}" class="err-box" style="margin-bottom:14px"></div>`:''}
+    <div style="overflow-x:auto"><table><tr><th>Student</th>${subjHeaders.map(h=>`<th>${h}</th>`).join('')}<th>Avg</th><th>Remark</th></tr>${review||'<tr><td colspan="9" class="mut">No students yet.</td></tr>'}</table></div>
   </div></div>`;
 }
 function bindTeacher(a){
@@ -1062,7 +1078,26 @@ function bindTeacher(a){
     save();toast('Student added');route();
   };
   const send=$('#send');
-  if(send)send.onclick=()=>{DB.rstat[cid+':'+CUR]='sent';save();toast('Sent to the office');route();};
+  if(send)send.onclick=()=>{
+    const c=DB.classes.find(x=>x.id===cid);
+    const kids=classKids(c),subs=c.subj;
+    const missingMarks=kids.filter(k=>subs.some(s=>scoreOf(k,CUR,s)==null&&!DB.absent[k.id+':'+CUR+':'+s]));
+    const missingRemarks=kids.filter(k=>!k.rem[CUR]||k.rem[CUR].trim()==='');
+    const errBox=$(`#rerr-${cid}`);
+    const card=$(`.mark-card[data-review="${cid}"]`);
+    if(missingMarks.length||missingRemarks.length){
+      let msg='';
+      if(missingMarks.length)msg=`${missingMarks.length} student(s) have missing marks. Complete all marks before sending.`;
+      if(missingRemarks.length)msg+=`${msg?' ':''} ${missingRemarks.length} student(s) need remarks.`;
+      if(errBox){
+        errBox.innerHTML=`<span class="err-ic">!</span><span>${msg}</span>`;
+        errBox.classList.remove('pop');void errBox.offsetWidth;errBox.classList.add('pop');
+      }
+      if(card){card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');}
+      return toast('Please fix the highlighted issues');
+    }
+    DB.rstat[cid+':'+CUR]='sent';save();toast('Sent to the office');route();
+  };
 }
 
 /* ===== office portal ===== */
